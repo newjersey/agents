@@ -1,18 +1,19 @@
-import { tool, DynamicStructuredTool } from '@langchain/core/tools';
+import { DynamicStructuredTool, tool } from '@langchain/core/tools';
 import type { RunnableConfig } from '@langchain/core/runnables';
 import type * as t from './types';
 import {
+  countrySchema,
+  DATE_RANGE,
+  dateSchema,
+  imagesSchema,
+  newsSchema,
+  querySchema,
+  videosSchema,
   WebSearchToolDescription,
   WebSearchToolName,
-  countrySchema,
-  imagesSchema,
-  videosSchema,
-  querySchema,
-  dateSchema,
-  newsSchema,
-  DATE_RANGE,
 } from './schema';
 import { createSearchAPI, createSourceProcessor } from './search';
+import { createPrototypeExaSearch } from '@/tools/search/exa';
 import { createSerperScraper } from './serper-scraper';
 import { createTavilyScraper } from './tavily-scraper';
 import { createFirecrawlScraper } from './firecrawl';
@@ -411,7 +412,11 @@ export const createSearchTool = (
     news: newsSchema,
   };
 
-  if (searchProvider === 'serper' || searchProvider === 'tavily') {
+  if (
+    searchProvider === 'serper' ||
+    searchProvider === 'tavily' ||
+    process.env.EXA_API_KEY !== undefined
+  ) {
     schemaProperties.country = countrySchema;
   }
 
@@ -420,6 +425,17 @@ export const createSearchTool = (
     properties: schemaProperties,
     required: ['query'],
   };
+
+  // Since Exa doesn't use the same pattern the rest of web search uses,
+  // we cut in early here to skip most web search tool steps
+  if (process.env.EXA_API_KEY !== undefined) {
+    return createTool({
+      search: createPrototypeExaSearch(safeSearch, logger),
+      schema: toolSchema,
+      maxOutputChars,
+      onSearchResults: _onSearchResults,
+    });
+  }
 
   const searchAPI = createSearchAPI({
     searchProvider,
